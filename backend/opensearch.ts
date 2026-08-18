@@ -1,6 +1,6 @@
 import { Client } from '@opensearch-project/opensearch';
 
-const getClient = () => {
+export const getClient = () => {
     const url = process.env.OPENSEARCH_URL;
     if (!url) throw new Error("OpenSearch Offline");
 

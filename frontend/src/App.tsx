@@ -11,7 +11,6 @@ import Dashboard from './components/Dashboard';
 import IncidentView from './components/IncidentView';
 import EventFeed from './components/EventFeed';
 import GlobalChat from './components/GlobalChat';
-import WorkflowSimulator from './workflows/WorkflowSimulator';
 import SensorsDashboard from './sensors/SensorsDashboard';
 import PermissionDialog from './components/PermissionDialog';
 import CaseManagement from './components/CaseManagement';
@@ -68,7 +67,9 @@ export default function App() {
       .then(setIncidents)
       .catch(err => console.error("Error fetching incidents from backend:", err));
 
-    const eventSource = new EventSource('/api/stream');
+    const token = localStorage.getItem('soc_token');
+    if (!token) return;
+    const eventSource = new EventSource('/api/stream?token=' + token);
     
     eventSource.onopen = () => setIsConnected(true);
     eventSource.onerror = () => setIsConnected(false);
@@ -244,7 +245,7 @@ export default function App() {
                      <div className="space-y-4 mt-6 px-2">
                         <div className="flex justify-between items-center border-b border-red-500/20 dark:border-red-500/20 pb-3">
                            <span className="uppercase tracking-widest text-[10px] font-bold text-neutral-600 dark:text-neutral-400">Environment</span>
-                           <span className="text-red-700 dark:text-red-500 font-bold">LAB ENVIRONMENT</span>
+                           <span className="text-red-700 dark:text-red-500 font-bold">PRODUCTION</span>
                         </div>
                         <div className="flex justify-between items-center border-b border-red-500/20 dark:border-red-500/20 pb-3">
                            <span className="uppercase tracking-widest text-[10px] font-bold text-neutral-600 dark:text-neutral-400">Data Retention (Days)</span>

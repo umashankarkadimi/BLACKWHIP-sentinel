@@ -1,7 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { Incident, AIAnalysis } from "../frontend/src/types.js";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getAI = () => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not configured.");
+  return new GoogleGenAI({ apiKey: key });
+};
 
 export async function runAIAnalysis(incident: Incident): Promise<AIAnalysis> {
   const prompt = `
@@ -31,7 +35,7 @@ export async function runAIAnalysis(incident: Incident): Promise<AIAnalysis> {
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await getAI().models.generateContent({
       model: 'gemini-3.1-flash-lite',
       contents: prompt,
       config: {
@@ -94,7 +98,7 @@ ${storeData.incidents.slice(0, 5).map((i: any) => `- ID: ${i.incident_id} | ${i.
   contents.push({ role: 'user', parts: [{ text: message }] });
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await getAI().models.generateContent({
       model: 'gemini-3.1-flash-lite',
       contents: contents as any
     });
@@ -142,7 +146,7 @@ ${incident.iocs?.map(i => `- ${i.type}: ${i.value} (${i.source}) - Malicious: ${
   contents.push({ role: 'user', parts: [{ text: message }] });
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await getAI().models.generateContent({
       model: 'gemini-3.1-flash-lite',
       contents: contents as any
     });

@@ -43,7 +43,7 @@ export default function Dashboard({ state, incidents, onSelectIncident }: { stat
         <div className="relative z-10">
           <h2 className="font-bold text-lg mb-4 text-neutral-50 dark:text-neutral-50 tracking-[0.1em] flex items-center gap-2">
             <Activity className="w-5 h-5 text-neutral-300 dark:text-neutral-300" />
-            LAB THREAT TELEMETRY
+            LIVE THREAT TELEMETRY
           </h2>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">

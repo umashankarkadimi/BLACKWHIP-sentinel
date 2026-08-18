@@ -197,6 +197,7 @@ function TimelineTab({ incident }: { incident: Incident }) {
 function ResponseTab({ incident }: { incident: Incident }) {
   const { user } = useAuth();
   const [isolatedHosts, setIsolatedHosts] = useState<string[]>([]);
+  const [isolationStatus, setIsolationStatus] = useState<Record<string, string>>({});
   const [blockedIps, setBlockedIps] = useState<string[]>([]);
   const [isResolving, setIsResolving] = useState(false);
 
@@ -262,7 +263,7 @@ function ResponseTab({ incident }: { incident: Incident }) {
                     : 'bg-orange-500/10 dark:bg-orange-700/30 text-orange-700 dark:text-orange-500 border-orange-500/30 dark:border-orange-500/30 hover:bg-orange-500/20 dark:hover:bg-orange-700/30'
                 }`}
               >
-                {isolatedHosts.includes(host) ? 'Host Isolated' : 'Isolate Host'}
+                {isolationStatus[host] || 'Isolate Host'}
               </button>
             </div>
           ))}

@@ -26,6 +26,15 @@ db.exec(`
     status TEXT,
     affected_assets TEXT,
     timeline TEXT,
+    alerts TEXT,
+    events TEXT,
+    iocs TEXT,
+    mitre_techniques TEXT,
+    case_owner TEXT,
+    case_notes TEXT,
+    case_tasks TEXT,
+    case_evidence TEXT,
+    ai_analysis TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     resolved_at DATETIME
   );
@@ -49,3 +58,14 @@ try {
     'ANALYST'
   );
 } catch(e) { console.error("Error seeding user", e); }
+
+try {
+  const columns = ['alerts', 'events', 'iocs', 'mitre_techniques', 'case_owner', 'case_notes', 'case_tasks', 'case_evidence', 'ai_analysis'];
+  for (const col of columns) {
+    try {
+      db.exec(`ALTER TABLE incidents ADD COLUMN ${col} TEXT`);
+    } catch (e) {
+      // Column might already exist, ignore
+    }
+  }
+} catch (e) {}

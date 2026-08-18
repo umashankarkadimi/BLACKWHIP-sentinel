@@ -1,4 +1,9 @@
-import express from "express";
+const fs = require('fs');
+
+const current = fs.readFileSync('backend/server.ts', 'utf8');
+const bottomPart = current.substring(current.indexOf('app.post("/api/chat"'));
+
+const topPart = `import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
@@ -56,7 +61,7 @@ setInterval(async () => {
 
 function saveIncidentToDb(inc: Incident) {
     try {
-        db.prepare(`INSERT INTO incidents (id, title, severity, status, affected_assets, created_at, resolved_at, alerts, events, iocs, mitre_techniques, case_owner, case_notes, case_tasks, case_evidence, ai_analysis)
+        db.prepare(\`INSERT INTO incidents (id, title, severity, status, affected_assets, created_at, resolved_at, alerts, events, iocs, mitre_techniques, case_owner, case_notes, case_tasks, case_evidence, ai_analysis)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET 
                         title=excluded.title, severity=excluded.severity, status=excluded.status, 
@@ -64,7 +69,7 @@ function saveIncidentToDb(inc: Incident) {
                         alerts=excluded.alerts, events=excluded.events, iocs=excluded.iocs,
                         mitre_techniques=excluded.mitre_techniques, case_owner=excluded.case_owner,
                         case_notes=excluded.case_notes, case_tasks=excluded.case_tasks,
-                        case_evidence=excluded.case_evidence, ai_analysis=excluded.ai_analysis`)
+                        case_evidence=excluded.case_evidence, ai_analysis=excluded.ai_analysis\`)
           .run(inc.incident_id, inc.title, inc.severity, inc.status, JSON.stringify(inc.affected_assets || []), 
                inc.created_at, inc.status === 'RESOLVED' ? inc.updated_at : null,
                JSON.stringify(inc.alerts || []), JSON.stringify(inc.events || []), JSON.stringify(inc.iocs || []),
@@ -215,7 +220,7 @@ async function evaluateRules(event: NormalizedEvent) {
          if (event.hostname) {
              const result = await isolateHost(event.hostname);
              try {
-                db.prepare(`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)`)
+                db.prepare(\`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)\`)
                   .run(uuidv4(), new Date().toISOString(), "AUTONOMOUS_DEFENSE_ISOLATE", "System-SOAR", JSON.stringify({ target: event.hostname, result }));
              } catch(e) { console.error(e); }
 
@@ -225,7 +230,7 @@ async function evaluateRules(event: NormalizedEvent) {
                  incident.case_notes.push({
                      timestamp: new Date().toISOString(),
                      author: 'SOAR-Bot',
-                     content: `Executed Auto-Containment playbook. Isolated host ${event.hostname} via Wazuh. Status: SUCCESS.`
+                     content: \`Executed Auto-Containment playbook. Isolated host \${event.hostname} via Wazuh. Status: SUCCESS.\`
                  });
                  saveIncidentToDb(incident);
                  eventBus.emit('incident_updated', incident);
@@ -263,10 +268,10 @@ async function correlateAlert(alert: Alert): Promise<Incident | null> {
     saveIncidentToDb(incident);
     eventBus.emit('incident_updated', incident);
   } else {
-    const incId = `INC-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    const incId = \`INC-\${new Date().getFullYear()}-\${Math.floor(100000 + Math.random() * 900000)}\`;
     incident = {
       incident_id: incId,
-      title: `Suspicious Activity on ${targetHost}`,
+      title: \`Suspicious Activity on \${targetHost}\`,
       severity: alert.severity,
       confidence: alert.confidence,
       status: 'NEW',
@@ -331,7 +336,7 @@ app.post("/api/state/defense", requireAuth, requireAnalyst, (req, res) => {
   const { active } = req.body;
   store.state.autonomousDefense = active;
   try {
-      db.prepare(`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)`)
+      db.prepare(\`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)\`)
         .run(uuidv4(), new Date().toISOString(), "UPDATE_SOAR_CONFIG", (req as any).user.email, JSON.stringify({ active }));
   } catch(e) { console.error(e); }
   eventBus.emit('state_update', store.state);
@@ -363,7 +368,7 @@ app.post("/api/incidents/:id/action", requireAuth, requireAnalyst, async (req, r
     const result = await isolateHost(targetAgentId);
     if (result.status === 'SUCCESS') {
         try {
-            db.prepare(`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)`)
+            db.prepare(\`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)\`)
               .run(uuidv4(), new Date().toISOString(), "ISOLATE_HOST_SUCCESS", (req as any).user.email, JSON.stringify(result));
         } catch(e) { console.error(e); }
         res.json({ success: true, result });
@@ -376,232 +381,14 @@ app.post("/api/incidents/:id/action", requireAuth, requireAnalyst, async (req, r
   saveIncidentToDb(incident);
 
   try {
-        db.prepare(`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)`)
-          .run(uuidv4(), new Date().toISOString(), `INCIDENT_${action}`, (req as any).user.email, JSON.stringify({ incident: incident.incident_id }));
+        db.prepare(\`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)\`)
+          .run(uuidv4(), new Date().toISOString(), \`INCIDENT_\${action}\`, (req as any).user.email, JSON.stringify({ incident: incident.incident_id }));
   } catch(e) { console.error(e); }
 
   eventBus.emit('incident_updated', incident);
   eventBus.emit('state_update', store.state);
   res.json({ success: true, incident });
 });
+`;
 
-
-
-app.get("/api/wazuh/agents", requireAuth, async (req, res) => {
-  try {
-      const result = await getAgents();
-      res.json(result);
-  } catch(e: any) {
-      res.status(503).json({ error: e.message || 'Wazuh Offline' });
-  }
-});
-
-app.post("/api/events/ingest", requireAuth, (req, res) => {
-  try {
-    ingestEvent(req.body);
-    res.json({ status: "ingested" });
-  } catch(e: any) {
-    res.status(400).json({ error: e.message });
-  }
-});
-
-app.get("/api/state/telemetry", requireAuth, async (req, res) => {
-    let wazuhStatus = "OFFLINE";
-    let openSearchStatus = "OFFLINE";
-    
-    try {
-       await getAgents();
-       wazuhStatus = "CONNECTED";
-    } catch(e){}
-    
-    try {
-        const { getClient } = require('./opensearch.js');
-        const client = getClient();
-        await client.info();
-        openSearchStatus = "CONNECTED";
-    } catch(e) {}
-    
-    res.json({
-        wazuh: wazuhStatus,
-        opensearch: openSearchStatus,
-        threatLevel: store.state.threatLevel
-    });
-});
-
-app.post("/api/chat", requireAuth, requireAnalyst, async (req, res) => {
-  const { incident_id, message, history } = req.body;
-  
-  // Real DB fetch for incident analysis
-  let dbIncident: any;
-  try {
-      const row = db.prepare('SELECT * FROM incidents WHERE id = ?').get(incident_id) as any;
-      if (row) {
-         dbIncident = { ...row, affected_assets: row.affected_assets ? JSON.parse(row.affected_assets as string) : [] };
-      }
-  } catch(e){}
-  
-  const incident = store.incidents.find(i => i.incident_id === incident_id) || dbIncident;
-  if (!incident) return res.status(404).json({ error: "Incident not found for analysis" });
-  
-  try {
-    const reply = await interrogateAI(incident, message, history || []);
-    res.json({ reply });
-  } catch(e) {
-    res.status(503).json({ error: "AI Analysis Unavailable" });
-  }
-});
-
-app.post("/api/chat/global", requireAuth, requireAnalyst, async (req, res) => {
-  const { message, history } = req.body;
-  try {
-    const reply = await interrogateGlobalAI(store, message, history || []);
-    res.json({ reply });
-  } catch (e) {
-    res.status(503).json({ error: "AI Analysis Unavailable" });
-  }
-});
-
-// Authentication
-app.post("/api/login/init", authLimiter, (req, res) => {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "Email required" });
-    
-    // Disallow auto-registration in production
-    let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
-    if (!user) {
-        return res.status(404).json({ error: "User not found. Please request access from administrator." });
-    }
-    console.log(`[Auth] Verification code for ${email} is: 123456`);
-    res.json({ requiresVerification: true });
-});
-
-app.post("/api/login/verify", authLimiter, (req, res) => {
-    const { email, code } = req.body;
-    if (code !== '123456') {
-        return res.status(401).json({ error: 'Invalid verification code.' });
-    }
-    
-    let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    
-    const secret = process.env.JWT_SECRET;
-    if (!secret) return res.status(500).json({ error: 'JWT_SECRET missing in server configuration' });
-
-    const token = jwt.sign({ uid: user.id, email: user.email }, secret, { expiresIn: '1h' });
-    res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
-});
-
-app.get("/api/me", requireAuth, (req, res) => {
-    const user = (req as any).user;
-    res.json({ role: user.role, email: user.email });
-});
-
-app.get("/api/audit", requireAuth, requireAnalyst, (req, res) => {
-    try {
-        const rows = db.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50').all();
-        res.json(rows);
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// Remove generic unauthenticated /api/audit POST endpoint for security
-// Actions are now audited directly within their respective handlers.
-
-app.get("/api/events", requireAuth, (req, res) => res.json(store.events.slice(0, 100)));
-
-app.get("/api/events/search", requireAuth, async (req, res) => {
-  const q = req.query.q as string || '';
-  try {
-      const results = await searchEvents(q);
-      res.json(results);
-  } catch(e: any) {
-      res.status(503).json({ error: e.message });
-  }
-});
-
-app.get("/api/rules", requireAuth, (req, res) => res.json(detectionRules));
-app.get("/api/alerts", requireAuth, (req, res) => res.json(store.alerts.slice(0, 100)));
-app.get("/api/incidents", requireAuth, (req, res) => res.json(store.incidents));
-
-app.get("/api/incidents/:id", requireAuth, (req, res) => {
-  const incident = store.incidents.find(i => i.incident_id === req.params.id);
-  if (incident) res.json(incident);
-  else res.status(404).json({ error: "Not found" });
-});
-
-// SSE Endpoint
-app.get("/api/stream", (req, res) => {
-  const token = req.query.token as string;
-  if (!token) return res.status(401).end();
-  try {
-      const secret = process.env.JWT_SECRET;
-      if (!secret) return res.status(500).end();
-      jwt.verify(token, secret);
-  } catch (e) {
-      return res.status(401).end();
-  }
-
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
-  });
-  
-  const sendEvent = (type: string, data: any) => {
-    res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
-  };
-
-  const onNewEvent = (e: NormalizedEvent) => sendEvent('new_event', e);
-  const onNewAlert = (a: Alert) => sendEvent('new_alert', a);
-  const onNewIncident = (i: Incident) => sendEvent('new_incident', i);
-  const onIncidentUpdate = (i: Incident) => sendEvent('incident_updated', i);
-  const onStateUpdate = (s: SystemState) => sendEvent('state_update', s);
-
-  eventBus.on('new_event', onNewEvent);
-  eventBus.on('new_alert', onNewAlert);
-  eventBus.on('new_incident', onNewIncident);
-  eventBus.on('incident_updated', onIncidentUpdate);
-  eventBus.on('state_update', onStateUpdate);
-
-  sendEvent('state_update', store.state);
-
-  req.on("close", () => {
-    eventBus.off('new_event', onNewEvent);
-    eventBus.off('new_alert', onNewAlert);
-    eventBus.off('new_incident', onNewIncident);
-    eventBus.off('incident_updated', onIncidentUpdate);
-    eventBus.off('state_update', onStateUpdate);
-  });
-});
-
-
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error("Express Error:", err);
-    if (req.path.startsWith('/api/')) {
-        res.status(500).json({ error: 'Internal Server Error', details: err.message });
-    } else {
-        next(err);
-    }
-});
-
-async function startServer() {
-
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
-  }
-
-  app.listen(PORT, "0.0.0.0" as any, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-}
-
-startServer();
+fs.writeFileSync('backend/server.ts', topPart + "\n" + bottomPart);
