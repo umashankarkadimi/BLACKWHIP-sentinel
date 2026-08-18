@@ -1,8 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { Incident, AIAnalysis } from "../frontend/src/types.js";
 
+const AI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
 const getAI = () => {
-  const key = process.env.GEMINI_API_KEY;
+  const key = process.env.GEMINI_API_KEY || process.env.PAUL_AI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not configured.");
   return new GoogleGenAI({ apiKey: key });
 };
@@ -36,7 +38,7 @@ export async function runAIAnalysis(incident: Incident): Promise<AIAnalysis> {
 
   try {
     const response = await getAI().models.generateContent({
-      model: 'gemini-3.1-flash-lite',
+      model: AI_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -99,7 +101,7 @@ ${storeData.incidents.slice(0, 5).map((i: any) => `- ID: ${i.incident_id} | ${i.
 
   try {
     const response = await getAI().models.generateContent({
-      model: 'gemini-3.1-flash-lite',
+      model: AI_MODEL,
       contents: contents as any
     });
     return response.text || "PAUL ERROR: UNABLE TO COMPUTE RESPONSE.";
@@ -147,7 +149,7 @@ ${incident.iocs?.map(i => `- ${i.type}: ${i.value} (${i.source}) - Malicious: ${
 
   try {
     const response = await getAI().models.generateContent({
-      model: 'gemini-3.1-flash-lite',
+      model: AI_MODEL,
       contents: contents as any
     });
     return response.text || "PAUL ERROR: UNABLE TO COMPUTE RESPONSE.";
@@ -156,4 +158,3 @@ ${incident.iocs?.map(i => `- ${i.type}: ${i.value} (${i.source}) - Malicious: ${
     return "PAUL ERROR: CONNECTION FAILED.";
   }
 }
-

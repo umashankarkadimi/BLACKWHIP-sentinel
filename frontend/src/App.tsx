@@ -29,7 +29,7 @@ export default function App() {
   const [activeMainTab, setActiveMainTab] = useState<'dashboard' | 'workflows' | 'sensors' | 'cases' | 'hunting' | 'rules'>('dashboard');
   const [state, setState] = useState<SystemState>({
     mode: 'LIVE',
-    telemetrySource: 'SIMULATED',
+    telemetrySource: 'REAL',
     threatLevel: 'LOW',
     activeIncidents: 0,
     highAlerts: 0,
@@ -261,7 +261,7 @@ export default function App() {
                      <div className="space-y-4 mt-6 px-2">
                         <div className="flex justify-between items-center border-b border-red-500/20 dark:border-red-500/20 pb-3">
                            <span className="uppercase tracking-widest text-[10px] font-bold text-neutral-600 dark:text-neutral-400">Paul Analysis Engine</span>
-                           <span className="text-emerald-700 font-bold">CONNECTED (v3.1 Lite)</span>
+                           <span className="text-emerald-700 font-bold">CONNECTED</span>
                         </div>
                         <div className="flex justify-between items-center border-b border-red-500/20 dark:border-red-500/20 pb-3">
                            <span className="uppercase tracking-widest text-[10px] font-bold text-neutral-600 dark:text-neutral-400">Threat Intel Feeds</span>
