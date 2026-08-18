@@ -1,0 +1,60 @@
+{
+  "collections": [
+    {
+      "name": "users",
+      "description": "SOC Analysts and administrators",
+      "fields": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "description": "'admin' or 'analyst'" }
+      },
+      "readAccess": "request.auth != null",
+      "writeAccess": "request.auth != null && request.auth.uid == documentId"
+    },
+    {
+      "name": "events",
+      "description": "Raw telemetry events forwarded from lab sensors via the Python bridge",
+      "fields": {
+        "source": { "type": "string" },
+        "hostname": { "type": "string" },
+        "event_type": { "type": "string" },
+        "rule_name": { "type": "string" },
+        "severity": { "type": "string" },
+        "mitre_tactic": { "type": "string", "optional": true },
+        "mitre_technique": { "type": "string", "optional": true },
+        "raw_event": { "type": "string", "optional": true },
+        "timestamp": { "type": "timestamp" }
+      },
+      "readAccess": "request.auth != null",
+      "writeAccess": "false" 
+    },
+    {
+      "name": "incidents",
+      "description": "Security incidents raised from events or created manually",
+      "fields": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "severity": { "type": "string" },
+        "status": { "type": "string" },
+        "assigneeId": { "type": "string", "optional": true },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "readAccess": "request.auth != null",
+      "writeAccess": "request.auth != null"
+    },
+    {
+      "name": "sensors",
+      "description": "Connected lab sensors and their status",
+      "fields": {
+        "hostname": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "status": { "type": "string", "description": "'online' or 'offline'" },
+        "lastSeen": { "type": "timestamp" },
+        "sensorType": { "type": "string", "description": "e.g., 'Wazuh', 'Sysmon'" }
+      },
+      "readAccess": "request.auth != null",
+      "writeAccess": "false"
+    }
+  ]
+}

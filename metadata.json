@@ -1,0 +1,6 @@
+{
+  "name": "BlackWhip SentinelX",
+  "description": "AI-Powered End-to-End SOC Incident Handling & Attack Simulation Platform",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
