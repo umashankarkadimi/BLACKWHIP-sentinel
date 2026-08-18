@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 
 const dataDir = path.join(process.cwd(), 'data');
 if (!fs.existsSync(dataDir)) {
@@ -49,15 +51,25 @@ db.exec(`
   );
 `);
 
-// Seed initial user
+// Seed / update the first admin user from environment (bcrypt-hashed).
 try {
-  db.prepare('INSERT OR IGNORE INTO users (id, email, password_hash, role) VALUES (?, ?, ?, ?)').run(
-    '00000000-0000-0000-0000-000000000000',
-    'analyst@lab.local',
-    'seed_hash',
-    'ANALYST'
-  );
-} catch(e) { console.error("Error seeding user", e); }
+  const adminEmail = process.env.ADMIN_EMAIL;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (adminEmail && adminPassword) {
+    const hash = bcrypt.hashSync(adminPassword, 10);
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(adminEmail) as any;
+    if (existing) {
+      db.prepare('UPDATE users SET password_hash = ?, role = ? WHERE email = ?').run(hash, 'ADMIN', adminEmail);
+    } else {
+      db.prepare('INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, ?)').run(
+        randomUUID(), adminEmail, hash, 'ADMIN'
+      );
+    }
+    console.log(`[DB] Admin user ready: ${adminEmail}`);
+  } else {
+    console.warn('[DB] ADMIN_EMAIL / ADMIN_PASSWORD not set — no admin user seeded. Set them in .env to enable login.');
+  }
+} catch(e) { console.error("Error seeding admin user", e); }
 
 try {
   const columns = ['alerts', 'events', 'iocs', 'mitre_techniques', 'case_owner', 'case_notes', 'case_tasks', 'case_evidence', 'ai_analysis'];
