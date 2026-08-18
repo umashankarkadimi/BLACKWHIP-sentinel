@@ -11,7 +11,8 @@ import { getAgents, isolateHost } from "./wazuh.js";
 import { indexEvent, searchEvents } from "./opensearch.js";
 import { db } from "./db.js";
 import { startCollector } from "./services/wazuh-alert-collector.js";
-import { interrogateAI, interrogateGlobalAI } from "./ai.js";
+import { interrogateAI, interrogateGlobalAI, runAIAnalysis } from "./ai.js";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 
@@ -23,6 +24,9 @@ app.use(express.json({ limit: '1mb' }));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const eventBus = new EventEmitter();
+
+process.on('unhandledRejection', (reason) => { console.error('[unhandledRejection]', reason); });
+process.on('uncaughtException', (err) => { console.error('[uncaughtException]', err); });
 eventBus.setMaxListeners(100);
 
 let store = {
@@ -136,7 +140,7 @@ async function ingestEvent(rawEvent: any) {
     file_hash: rawEvent.data?.win?.eventdata?.hashes || rawEvent.file_hash,
   };
 
-  await indexEvent(normalized);
+  indexEvent(normalized).catch(() => {});
 
   store.events.unshift(normalized);
   if (store.events.length > 500) store.events.pop();
@@ -285,8 +289,17 @@ async function correlateAlert(alert: Alert): Promise<Incident | null> {
     
     saveIncidentToDb(incident);
     eventBus.emit('new_incident', incident);
+
+    // Real AI triage (Paul) — async, non-blocking; enriches the incident when it returns
+    runAIAnalysis(incident).then(analysis => {
+      incident.ai_analysis = analysis;
+      if (analysis.severity) incident.severity = analysis.severity as Severity;
+      incident.updated_at = new Date().toISOString();
+      saveIncidentToDb(incident);
+      eventBus.emit('incident_updated', incident);
+    }).catch(err => console.error('AI triage failed:', err));
   }
-  
+
   if (event.file_hash) {
       const result = await lookupHash(event.file_hash);
       if (result.malicious) {
@@ -326,6 +339,32 @@ const requireAdmin = (req: express.Request, res: express.Response, next: express
     }
     next();
 };
+
+// Endpoint agents / log forwarders authenticate with a shared ingest key OR a valid JWT.
+const requireIngestAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ingestKey = process.env.INGEST_API_KEY;
+    const provided = req.headers['x-ingest-key'];
+    if (ingestKey && provided && provided === ingestKey) return next();
+    return requireAuth(req, res, next);
+};
+
+app.get("/api/state", requireAuth, (req, res) => {
+  res.json(store.state);
+});
+
+app.post("/api/state/mode", requireAuth, requireAnalyst, (req, res) => {
+  const { mode } = req.body || {};
+  if (mode !== 'LIVE' && mode !== 'SIMULATION') {
+    return res.status(400).json({ error: "mode must be 'LIVE' or 'SIMULATION'" });
+  }
+  store.state.mode = mode;
+  try {
+    db.prepare(`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)`)
+      .run(uuidv4(), new Date().toISOString(), "SET_MODE", (req as any).user.email, JSON.stringify({ mode }));
+  } catch(e) { console.error(e); }
+  eventBus.emit('state_update', store.state);
+  res.json({ success: true, mode: store.state.mode });
+});
 
 app.post("/api/state/defense", requireAuth, requireAnalyst, (req, res) => {
   const { active } = req.body;
@@ -396,10 +435,17 @@ app.get("/api/wazuh/agents", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/events/ingest", requireAuth, (req, res) => {
+app.post("/api/events/ingest", requireIngestAuth, (req, res) => {
   try {
-    ingestEvent(req.body);
-    res.json({ status: "ingested" });
+    const body = req.body;
+    const batch = Array.isArray(body) ? body : (Array.isArray(body?.events) ? body.events : [body]);
+    let accepted = 0;
+    for (const ev of batch) {
+      if (!ev || typeof ev !== 'object') continue;
+      ingestEvent(ev);
+      accepted++;
+    }
+    res.json({ status: "ingested", accepted });
   } catch(e: any) {
     res.status(400).json({ error: e.message });
   }
@@ -461,33 +507,26 @@ app.post("/api/chat/global", requireAuth, requireAnalyst, async (req, res) => {
   }
 });
 
-// Authentication
-app.post("/api/login/init", authLimiter, (req, res) => {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "Email required" });
-    
-    // Disallow auto-registration in production
-    let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
-    if (!user) {
-        return res.status(404).json({ error: "User not found. Please request access from administrator." });
-    }
-    console.log(`[Auth] Verification code for ${email} is: 123456`);
-    res.json({ requiresVerification: true });
-});
+// Authentication — real email + password login (bcrypt) issuing a JWT with role for RBAC
+app.post("/api/login", authLimiter, async (req, res) => {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
 
-app.post("/api/login/verify", authLimiter, (req, res) => {
-    const { email, code } = req.body;
-    if (code !== '123456') {
-        return res.status(401).json({ error: 'Invalid verification code.' });
-    }
-    
-    let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    
     const secret = process.env.JWT_SECRET;
     if (!secret) return res.status(500).json({ error: 'JWT_SECRET missing in server configuration' });
 
-    const token = jwt.sign({ uid: user.id, email: user.email }, secret, { expiresIn: '1h' });
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
+    // Constant-ish response to avoid user enumeration
+    if (!user || !user.password_hash) return res.status(401).json({ error: "Invalid credentials" });
+
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+
+    const token = jwt.sign({ uid: user.id, email: user.email, role: user.role }, secret, { expiresIn: '8h' });
+    try {
+        db.prepare(`INSERT INTO audit_logs (id, timestamp, action, user_email, details) VALUES (?, ?, ?, ?, ?)`)
+          .run(uuidv4(), new Date().toISOString(), "LOGIN", user.email, JSON.stringify({ ip: req.ip }));
+    } catch(e) { console.error(e); }
     res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
 });
 

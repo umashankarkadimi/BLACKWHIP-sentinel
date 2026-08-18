@@ -4,8 +4,7 @@ interface AuthContextType {
   user: any | null;
   role: 'ADMIN' | 'ANALYST' | 'GUEST';
   loading: boolean;
-  signIn: (email: string) => Promise<{ requiresVerification?: boolean, error?: string }>;
-  verifyCode: (email: string, code: string) => Promise<{ success?: boolean, error?: string }>;
+  signIn: (email: string, password: string) => Promise<{ success?: boolean, error?: string }>;
   logOut: () => Promise<void>;
 }
 
@@ -21,7 +20,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const token = localStorage.getItem('soc_token');
     const storedUser = localStorage.getItem('soc_user');
-    
+
     if (token && storedUser) {
         const u = JSON.parse(storedUser);
         setUser(u);
@@ -30,42 +29,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   }, []);
 
-  const signIn = async (email: string) => {
+  const signIn = async (email: string, password: string) => {
     try {
-        const res = await fetch('/api/login/init', {
+        const res = await fetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
+            body: JSON.stringify({ email, password })
         });
         const data = await res.json();
-        
-        if (data.error) return { error: data.error };
-        return { requiresVerification: data.requiresVerification };
-    } catch (e) {
-        console.error("Login init failed", e);
-        return { error: 'Connection failed' };
-    }
-  };
 
-  const verifyCode = async (email: string, code: string) => {
-    try {
-        const res = await fetch('/api/login/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, code })
-        });
-        const data = await res.json();
-        
         if (data.error) return { error: data.error };
-        
+
         localStorage.setItem('soc_token', data.token);
         localStorage.setItem('soc_user', JSON.stringify(data.user));
-        
+
         setUser(data.user);
         setRole(data.user.role);
         return { success: true };
     } catch (e) {
-        console.error("Login verify failed", e);
+        console.error("Login failed", e);
         return { error: 'Connection failed' };
     }
   };
@@ -78,7 +60,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, signIn, verifyCode, logOut }}>
+    <AuthContext.Provider value={{ user, role, loading, signIn, logOut }}>
       {children}
     </AuthContext.Provider>
   );
