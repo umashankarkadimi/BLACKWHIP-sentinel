@@ -1,35 +1,45 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
+    // Role comes from Firebase Auth CUSTOM CLAIMS (set by a privileged admin
+    // SDK / server), NEVER from a user-writable document. This prevents a user
+    // from writing their own users/{uid} doc with role: 'ADMIN'.
     function getUserRole() {
-      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return (userDoc != null && 'role' in userDoc.data) ? userDoc.data.role : 'GUEST';
+      return 'role' in request.auth.token ? request.auth.token.role : 'GUEST';
     }
 
     function isAdmin() {
-      return getUserRole() == 'ADMIN';
+      return getUserRole() == 'ADMIN' || getUserRole() == 'ROOT';
     }
 
     function isAnalyst() {
       let role = getUserRole();
-      return role == 'ADMIN' || role == 'ANALYST';
+      return role == 'ADMIN' || role == 'ROOT' || role == 'ANALYST';
     }
 
+    // Users may read profiles; may edit their own profile but never the role.
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && !('role' in request.resource.data.diff(resource.data).affectedKeys());
+      allow create: if isAdmin();
+      allow delete: if isAdmin();
     }
+    // Events are written by the server bridge / ingest pipeline (admin SDK
+    // bypasses rules); clients may only read.
     match /events/{eventId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
+    // Incidents: analysts can read; admins/analysts write.
     match /incidents/{incidentId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if request.auth != null && isAnalyst();
+      allow write: if request.auth != null && isAnalyst();
     }
     match /sensors/{sensorId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && isAnalyst();
       allow write: if request.auth != null && isAdmin();
     }
     match /audit_logs/{logId} {

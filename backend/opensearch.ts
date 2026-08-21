@@ -1,10 +1,30 @@
 import { Client } from '@opensearch-project/opensearch';
+import { logger } from './logger.js';
+
+// Search index for historical Wazuh alerts — same env knob as the collector.
+const ALERTS_SEARCH_INDEX = process.env.OPENSEARCH_ALERTS_INDEX || 'wazuh-alerts-*';
+// Index used to mirror normalized events back into OpenSearch.
+const EVENTS_INDEX = process.env.OPENSEARCH_EVENTS_INDEX || 'wazuh-alerts-lab';
+
+let lastErrorLog = 0; // throttle repeated failures to 1 log / minute
+
+function logThrottled(msg: string, error: any) {
+  const now = Date.now();
+  if (now - lastErrorLog > 60000) {
+    lastErrorLog = now;
+    logger.warn(msg, { error: error?.message || String(error) });
+  }
+}
 
 export const getClient = () => {
     const url = process.env.OPENSEARCH_URL;
     if (!url) throw new Error("OpenSearch Offline");
 
-    const verifyTls = process.env.OPENSEARCH_VERIFY_TLS === 'true';
+    // Verify TLS by default outside development; labs with self-signed certs
+    // can explicitly opt out with OPENSEARCH_VERIFY_TLS=false.
+    const verifyTls = process.env.OPENSEARCH_VERIFY_TLS === undefined
+        ? process.env.NODE_ENV !== 'development'
+        : process.env.OPENSEARCH_VERIFY_TLS === 'true';
 
     return new Client({
         node: url,
@@ -19,7 +39,7 @@ export const getClient = () => {
 export async function searchEvents(query: string, filters: any = {}) {
     try {
         const client = getClient();
-        
+
         let mustClauses: any[] = [];
         if (query) {
             mustClauses.push({
@@ -29,7 +49,7 @@ export async function searchEvents(query: string, filters: any = {}) {
                 }
             });
         }
-        
+
         if (filters.hostname) mustClauses.push({ match: { "agent.name": filters.hostname } });
         if (filters.ip) mustClauses.push({ term: { "data.srcip": filters.ip } });
 
@@ -40,13 +60,13 @@ export async function searchEvents(query: string, filters: any = {}) {
         };
 
         const response = await client.search({
-            index: 'wazuh-alerts-*',
+            index: ALERTS_SEARCH_INDEX,
             body: body
         });
-        
+
         return response.body.hits.hits.map((h: any) => h._source);
     } catch (error: any) {
-        console.error("[OpenSearch] Query failed:", error.message);
+        logThrottled('opensearch_query_failed', error);
         throw new Error("OpenSearch Offline");
     }
 }
@@ -55,11 +75,11 @@ export async function indexEvent(event: any) {
     try {
         const client = getClient();
         await client.index({
-            index: `wazuh-alerts-lab`,
+            index: EVENTS_INDEX,
             body: event
         });
     } catch (error: any) {
-        console.error("[OpenSearch] Index failed:", error.message);
+        logThrottled('opensearch_index_failed', error);
         throw new Error("OpenSearch Offline");
     }
 }

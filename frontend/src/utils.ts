@@ -1,3 +1,4 @@
+import { session, fireAuthExpired } from './lib/session';
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -15,27 +16,31 @@ export function formatTime(isoString: string) {
 }
 
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-    const token = localStorage.getItem('soc_token');
     const headers = new Headers(options.headers || {});
-    if (token) {
+    // Always attach the bearer token when available (works even when cookies
+    // are blocked). The httpOnly cookie remains a fallback for requests that
+    // cannot carry headers.
+    const token = session.getToken();
+    if (token && !headers.has('Authorization')) {
         headers.set('Authorization', `Bearer ${token}`);
     }
-    const newOptions = { ...options, headers };
+    const newOptions: RequestInit = { ...options, headers, credentials: 'include' };
     const res = await fetch(url, newOptions);
-    if (res.status === 401 || res.status === 403) {
-        console.warn('Auth error', res.status);
-        // Force re-auth
-        localStorage.removeItem('soc_token');
-        localStorage.removeItem('soc_user');
-        window.location.reload();
-        return new Promise<Response>(() => {}); // Halt execution while reloading
+
+    // A 401 means the session is genuinely invalid/expired: clear it and flip
+    // to the login view via an event. We deliberately DO NOT reload the page —
+    // a hard reload is what turns a transient 401 into an infinite login loop
+    // when storage is flaky (iframe previews, partitioned storage, stale tabs).
+    if (res.status === 401) {
+        console.warn('Auth error 401 — session invalid:', url);
+        fireAuthExpired();
+        throw new Error('Session expired');
     }
-    
+
     if (!res.ok) {
         const text = await res.text();
-        console.error("API Error Response:", res.status, text.substring(0, 100));
+        console.error("API Error Response:", res.status, url, text.substring(0, 100));
         throw new Error(`API returned ${res.status}: ${text.substring(0, 20)}`);
     }
     return res;
-
 }

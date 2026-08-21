@@ -9,6 +9,16 @@ export default defineConfig(() => {
     build: {
       outDir: '../dist',
       emptyOutDir: true,
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-markdown'],
+            'vendor-charts': ['recharts', 'reactflow'],
+            'vendor-ui': ['lucide-react', 'motion', 'clsx', 'tailwind-merge', 'date-fns'],
+          },
+        },
+      },
     },
     plugins: [react(), tailwindcss()],
     resolve: {
@@ -18,7 +28,7 @@ export default defineConfig(() => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},

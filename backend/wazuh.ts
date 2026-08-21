@@ -1,11 +1,16 @@
 import axios from 'axios';
 import https from 'https';
+import { logger } from './logger.js';
 
 const getWazuhClient = async () => {
     const url = process.env.WAZUH_API_URL;
     const username = process.env.WAZUH_API_USERNAME || process.env.WAZUH_API_USER;
     const password = process.env.WAZUH_API_PASSWORD;
-    const verifyTls = process.env.WAZUH_VERIFY_TLS === 'true';
+    // Verify TLS by default outside development; labs with self-signed certs
+    // can explicitly opt out with WAZUH_VERIFY_TLS=false.
+    const verifyTls = process.env.WAZUH_VERIFY_TLS === undefined
+        ? process.env.NODE_ENV !== 'development'
+        : process.env.WAZUH_VERIFY_TLS === 'true';
 
     if (!url || !username || !password) {
         throw new Error("Wazuh API configuration missing");
@@ -68,7 +73,7 @@ export async function isolateHost(agentId: string) {
             return { status: 'FAILED', details: `Isolation command failed: ${res.data?.message || 'Unknown error'}` };
         }
     } catch (e: any) {
-        console.error("[Wazuh] Error isolating host:", e.message);
+        logger.warn("wazuh_isolate_failed", { error: e?.message || String(e) });
         return { status: 'UNVERIFIED', details: 'Isolation Unverified: Could not confirm execution' };
     }
 }

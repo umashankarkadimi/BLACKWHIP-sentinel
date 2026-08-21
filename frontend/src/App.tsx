@@ -4,7 +4,7 @@ import { authFetch } from './utils';
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SystemState, NormalizedEvent, Incident, Alert } from './types';
 import TopBar from './components/TopBar';
 import Dashboard from './components/Dashboard';
@@ -16,7 +16,9 @@ import PermissionDialog from './components/PermissionDialog';
 import CaseManagement from './components/CaseManagement';
 import ThreatHunting from './components/ThreatHunting';
 import RuleEngineering from './components/RuleEngineering';
+import Workflows from './components/Workflows';
 import LoginView from './components/LoginView';
+import UserManagement from './components/UserManagement';
 import { Activity, ShieldAlert, Shield, ShieldCheck, X, Lock } from 'lucide-react';
 import { useAuth } from './lib/AuthProvider';
 
@@ -25,7 +27,7 @@ import { useAuth } from './lib/AuthProvider';
 import AuditLogsPanel from './components/AuditLogsPanel';
 
 export default function App() {
-  const { user, role, loading, signIn } = useAuth();
+  const { user, role, loading, logOut } = useAuth();
   const [activeMainTab, setActiveMainTab] = useState<'dashboard' | 'workflows' | 'sensors' | 'cases' | 'hunting' | 'rules'>('dashboard');
   const [state, setState] = useState<SystemState>({
     mode: 'LIVE',
@@ -37,11 +39,10 @@ export default function App() {
     totalEndpoints: 0,
     autonomousDefense: false
   });
-  const stateRef = useRef(state);
-  useEffect(() => { stateRef.current = state; }, [state]);
 
   const [events, setEvents] = useState<NormalizedEvent[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
 
   const [activeModal, setActiveModal] = useState<'none' | 'settings' | 'profile'>('none');
@@ -54,43 +55,101 @@ export default function App() {
     if (!user || role === 'GUEST') return;
     
     // Initial fetch from backend for state
-    authFetch('/api/state').then(r => r.json()).then(setState);
+    authFetch('/api/state').then(r => r.json()).then(setState).catch(console.error);
     
-    // Initial fetch from Firestore for persisted telemetry and incidents
+    // Merge (not overwrite) fetched data with anything SSE already delivered:
+    // dedupe by id and keep newest-first, so a fetch racing the stream can
+    // never produce duplicate events/incidents in the UI.
     authFetch('/api/events')
       .then(r => r.json())
-      .then(setEvents)
+      .then((fetched: any[]) => {
+        setEvents(prev => {
+          const byId = new Map<string, any>();
+          for (const e of prev) byId.set(e.event_id, e);
+          for (const e of fetched) if (e?.event_id) byId.set(e.event_id, e);
+          return [...byId.values()]
+            .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))
+            .slice(0, 100);
+        });
+      })
       .catch(err => console.error("Error fetching events from backend:", err));
 
     authFetch('/api/incidents')
       .then(r => r.json())
-      .then(setIncidents)
+      .then((fetched: any[]) => {
+        setIncidents(prev => {
+          const byId = new Map<string, any>();
+          for (const i of prev) byId.set(i.incident_id, i);
+          for (const i of fetched) if (i?.incident_id) byId.set(i.incident_id, i);
+          return [...byId.values()]
+            .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+        });
+      })
       .catch(err => console.error("Error fetching incidents from backend:", err));
 
-    const token = localStorage.getItem('soc_token');
-    if (!token) return;
-    const eventSource = new EventSource('/api/stream?token=' + token);
-    
-    eventSource.onopen = () => setIsConnected(true);
-    eventSource.onerror = () => setIsConnected(false);
-    
-    eventSource.addEventListener('state_update', (e) => setState(JSON.parse(e.data)));
-    eventSource.addEventListener('new_event', (e) => {
-      const event = JSON.parse(e.data);
-      setEvents(prev => [event, ...prev].slice(0, 100));
-      // Handled by backend now
-    });
-    eventSource.addEventListener('new_incident', (e) => {
-      const incident = JSON.parse(e.data);
-      setIncidents(prev => [incident, ...prev]);
-    });
-    eventSource.addEventListener('incident_updated', (e) => {
-      const updated = JSON.parse(e.data);
-      setIncidents(prev => prev.map(i => i.incident_id === updated.incident_id ? updated : i));
-      setSelectedIncident(prev => prev?.incident_id === updated.incident_id ? updated : prev);
-    });
+    // SSE stream: uses a short-lived stream token (2 min) fetched from the
+    // backend, so the long-lived API JWT never appears in the query string.
+    // On disconnect the stream re-fetches a fresh token and reconnects.
+    let mounted = true;
+    let eventSource: EventSource | null = null;
+    let retryTimer: number | null = null;
 
-    return () => eventSource.close();
+    const attachHandlers = (es: EventSource) => {
+      es.onopen = () => setIsConnected(true);
+      es.onerror = () => {
+        setIsConnected(false);
+        es.close();
+        if (mounted && retryTimer === null) {
+          retryTimer = window.setTimeout(() => { retryTimer = null; openStream(); }, 3000);
+        }
+      };
+      es.addEventListener('state_update', (e) => setState(JSON.parse(e.data)));
+      es.addEventListener('new_event', (e) => {
+        const event = JSON.parse(e.data);
+        setEvents(prev => [event, ...prev.filter(x => x.event_id !== event.event_id)].slice(0, 100));
+      });
+      es.addEventListener('new_alert', (e) => {
+        const alert = JSON.parse(e.data);
+        setAlerts(prev => [alert, ...prev.filter(a => a.alert_id !== alert.alert_id)].slice(0, 20));
+      });
+      es.addEventListener('alert_updated', (e) => {
+        const alert = JSON.parse(e.data);
+        setAlerts(prev => [alert, ...prev.filter(a => a.alert_id !== alert.alert_id)].slice(0, 20));
+      });
+      es.addEventListener('new_incident', (e) => {
+        const incident = JSON.parse(e.data);
+        setIncidents(prev => [incident, ...prev.filter(i => i.incident_id !== incident.incident_id)]);
+      });
+      es.addEventListener('incident_updated', (e) => {
+        const updated = JSON.parse(e.data);
+        setIncidents(prev => prev.map(i => i.incident_id === updated.incident_id ? updated : i));
+        setSelectedIncident(prev => prev?.incident_id === updated.incident_id ? updated : prev);
+      });
+    };
+
+    const openStream = () => {
+      if (!mounted) return;
+      authFetch('/api/stream/token', { method: 'POST' })
+        .then(r => r.json())
+        .then((data: any) => {
+          if (!mounted || !data.token) return;
+          eventSource = new EventSource('/api/stream?token=' + encodeURIComponent(data.token));
+          attachHandlers(eventSource);
+        })
+        .catch(() => {
+          if (mounted && retryTimer === null) {
+            retryTimer = window.setTimeout(() => { retryTimer = null; openStream(); }, 5000);
+          }
+        });
+    };
+
+    openStream();
+
+    return () => {
+      mounted = false;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      eventSource?.close();
+    };
   }, [user, role]);
 
   if (loading) {
@@ -110,6 +169,7 @@ export default function App() {
 
       <TopBar 
         state={state} 
+        alerts={alerts}
         isConnected={isConnected}
         isDarkMode={isDarkMode}
         activeMainTab={activeMainTab}
@@ -117,15 +177,6 @@ export default function App() {
         onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
         onOpenSettings={(tab) => { setActiveModal('settings'); setModalTab(tab); }}
         onOpenProfile={(tab) => { setActiveModal('profile'); setModalTab(tab); }}
-        onToggleMode={() => {
-          const newMode = state.mode === 'LIVE' ? 'SIMULATION' : 'LIVE';
-          authFetch('/api/state/mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: newMode })
-          });
-          setState(s => ({ ...s, mode: newMode }));
-        }}
         onToggleDefense={() => {
           if (!state.autonomousDefense) {
             setShowAutoDefenseDialog(true);
@@ -143,10 +194,14 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 transition-all duration-300">
-          {activeMainTab === 'workflows' ? (
-            <div className="flex-1 flex items-center justify-center text-neutral-500 font-mono h-full">
-              Workflows are now fully autonomous via Backend SOAR Playbooks.
+          {activeMainTab === 'dashboard' && events.length === 0 && (
+            <div className="mb-4 p-3 border border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px] font-mono rounded flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+              REAL-TIME TELEMETRY: no events received yet — waiting for the Wazuh/OpenSearch collector or POST /api/events/ingest.
             </div>
+          )}
+          {activeMainTab === 'workflows' ? (
+            <Workflows />
           ) : activeMainTab === 'sensors' ? (
             <SensorsDashboard />
           ) : activeMainTab === 'cases' ? (
@@ -171,7 +226,7 @@ export default function App() {
               <span className="text-[10px] font-mono bg-black dark:bg-black text-neutral-600 dark:text-neutral-400 px-2 py-0.5 rounded uppercase tracking-widest">{state.eps} EPS</span>
             </div>
             <div className="flex-1 overflow-y-auto">
-              <EventFeed events={events} mode={state.mode} />
+              <EventFeed events={events} />
             </div>
           </div>
         )}
@@ -227,7 +282,7 @@ export default function App() {
                   </div>
                   <div className="flex gap-4 mt-4">
                     <button onClick={() => setActiveModal('none')} className="px-6 py-2 border border-red-700 dark:border-red-500/20 hover:bg-black dark:bg-black/80 transition-colors uppercase tracking-widest font-bold text-[10px] rounded-md text-neutral-300 dark:text-neutral-300">Abort</button>
-                    <button onClick={() => { setActiveModal('none'); }} className="px-6 py-2 bg-red-500/10 dark:bg-red-700/30 border border-red-500/30 dark:border-red-500/30 text-red-700 dark:text-red-500 hover:bg-red-500/20 dark:bg-red-700/30 transition-colors uppercase tracking-widest font-bold text-[10px] rounded-md">Confirm Disconnect</button>
+                    <button onClick={() => { setActiveModal('none'); logOut(); }} className="px-6 py-2 bg-red-500/10 dark:bg-red-700/30 border border-red-500/30 dark:border-red-500/30 text-red-700 dark:text-red-500 hover:bg-red-500/20 dark:bg-red-700/30 transition-colors uppercase tracking-widest font-bold text-[10px] rounded-md">Confirm Disconnect</button>
                   </div>
                 </div>
               ) : (
@@ -274,7 +329,8 @@ export default function App() {
                      </div>
                   )}
                   {modalTab === 'Audit Logs' && <AuditLogsPanel />}
-                  {(modalTab === 'Access Control' || modalTab === 'Agent Preferences' || modalTab === 'Paul Thresholds') && (
+                  {modalTab === 'Access Control' && (role === 'ADMIN' || role === 'ROOT') && <UserManagement />}
+                  {(modalTab === 'Agent Preferences' || modalTab === 'Paul Thresholds' || (modalTab === 'Access Control' && role !== 'ADMIN' && role !== 'ROOT')) && (
                     <div className="text-neutral-500 mt-6 text-center italic mt-12 flex flex-col items-center gap-2">
                       <ShieldAlert className="w-8 h-8 text-neutral-400 dark:text-neutral-600" />
                       <p>Settings interface locked due to insufficient clearance.<br/>Contact root administrator.</p>

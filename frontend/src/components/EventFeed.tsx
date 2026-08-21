@@ -2,7 +2,7 @@ import React from 'react';
 import { NormalizedEvent } from '../types';
 import { formatTime } from '../utils';
 
-export default function EventFeed({ events, mode }: { events: NormalizedEvent[], mode: 'LIVE' | 'SIMULATION' }) {
+export default function EventFeed({ events }: { events: NormalizedEvent[] }) {
   return (
     <div className="flex flex-col divide-y divide-[#1a1a1a]">
       {events.map((e) => (
@@ -10,8 +10,8 @@ export default function EventFeed({ events, mode }: { events: NormalizedEvent[],
           <div className="flex items-center justify-between mb-2">
             <span className="font-mono text-xs text-neutral-500">{formatTime(e.timestamp)}</span>
             <div className="flex gap-2">
-              <span className={`text-[8px] uppercase px-1.5 py-0.5 rounded border ${mode === 'LIVE' ? 'bg-red-900/20 text-red-500 border-red-500/30' : 'bg-blue-900/20 text-blue-500 border-blue-500/30'}`}>
-                {mode}
+              <span className="text-[8px] uppercase px-1.5 py-0.5 rounded border bg-red-900/20 text-red-500 border-red-500/30">
+                LIVE
               </span>
               <span className={`text-[8px] uppercase px-1.5 py-0.5 rounded border ${getEventSeverityColor(e.severity)}`}>
                 {e.severity}

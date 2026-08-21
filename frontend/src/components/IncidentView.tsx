@@ -1,12 +1,11 @@
 import { authFetch } from '../utils';
 import React, { useState } from 'react';
 import { Incident } from '../types';
-import { ArrowLeft, ShieldAlert, Cpu, Activity, Clock, Shield, FileText, Lock, ShieldBan, CheckCircle, Download, AlertCircle, User } from 'lucide-react';
+import { ArrowLeft, ShieldAlert, Cpu, Activity, Clock, Shield, Lock, ShieldBan, CheckCircle, Download, AlertCircle, User } from 'lucide-react';
 import { getSeverityStyles, getStatusStyles } from './Dashboard';
 import { formatTime } from '../utils';
 import AttackGraph from './AttackGraph';
 import ReactMarkdown from 'react-markdown';
-import { useAuth } from '../lib/AuthProvider';
 import { logAudit } from '../lib/audit';
 
 
@@ -195,39 +194,50 @@ function TimelineTab({ incident }: { incident: Incident }) {
 }
 
 function ResponseTab({ incident }: { incident: Incident }) {
-  const { user } = useAuth();
   const [isolatedHosts, setIsolatedHosts] = useState<string[]>([]);
   const [isolationStatus, setIsolationStatus] = useState<Record<string, string>>({});
-  const [blockedIps, setBlockedIps] = useState<string[]>([]);
+  const [blockedIps, setBlockedIps] = useState<string[]>(incident.blocked_ips || []);
   const [isResolving, setIsResolving] = useState(false);
 
   const handleIsolate = async (host: string) => {
     setIsolatedHosts(prev => [...prev, host]);
-    const token = localStorage.getItem('soc_token');
+    setIsolationStatus(prev => ({ ...prev, [host]: 'ISOLATING…' }));
     try {
-        await authFetch(`/api/incidents/${incident.incident_id}/action`, {
+        const res = await authFetch(`/api/incidents/${incident.incident_id}/action`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'ISOLATE_HOST', payload: { hostname: host }, incident })
         });
-    } catch(e) { console.error(e); }
-    if (user) logAudit(user.uid, user.email || 'unknown', 'ISOLATE_HOST', { incident: incident.incident_id, host });
+        const data = await res.json();
+        setIsolationStatus(prev => ({ ...prev, [host]: data?.success ? 'ISOLATED ✓' : 'FAILED' }));
+    } catch(e) {
+        console.error(e);
+        setIsolationStatus(prev => ({ ...prev, [host]: 'FAILED' }));
+    }
+    logAudit('ISOLATE_HOST', { incident: incident.incident_id, host });
   };
 
-  const handleBlockIp = (ip: string) => {
+  const handleBlockIp = async (ip: string) => {
     setBlockedIps(prev => [...prev, ip]);
-    if (user) logAudit(user.uid, user.email || 'unknown', 'BLOCK_IP', { incident: incident.incident_id, ip });
+    try {
+      await authFetch(`/api/incidents/${incident.incident_id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'BLOCK_IP', payload: { ip } })
+      });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleResolve = async () => {
     setIsResolving(true);
-    const token = localStorage.getItem('soc_token');
     await authFetch(`/api/incidents/${incident.incident_id}/action`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'UPDATE_STATUS', payload: { status: 'RESOLVED' }, incident })
     });
-    if (user) logAudit(user.uid, user.email || 'unknown', 'RESOLVE_INCIDENT', { incident: incident.incident_id });
+    logAudit('RESOLVE_INCIDENT', { incident: incident.incident_id });
     setIsResolving(false);
   };
 

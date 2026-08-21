@@ -1,5 +1,6 @@
 import axios from 'axios';
 import 'dotenv/config';
+import { logger } from './logger.js';
 
 export async function lookupHash(hash: string) {
   try {
@@ -34,7 +35,7 @@ export async function lookupHash(hash: string) {
     
     return { malicious: false, source: 'UNKNOWN', details: 'Threat Intelligence APIs unavailable' };
   } catch (error) {
-    console.error('[ThreatIntel] Error looking up IOC:', error);
+    logger.warn('threatintel_lookup_failed', { error: error instanceof Error ? error.message : String(error) });
     return { malicious: false, source: 'UNKNOWN', details: 'Error reaching Threat Intelligence' };
   }
 }

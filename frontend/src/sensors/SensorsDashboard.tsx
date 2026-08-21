@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Activity, ShieldCheck, ShieldAlert, Laptop, Server, HardDrive, RefreshCw } from 'lucide-react';
 import { authFetch } from '../utils';
@@ -22,9 +21,19 @@ export default function SensorsDashboard() {
     setLoading(false);
   };
 
+  const [lastUpdated, setLastUpdated] = useState('');
+
   useEffect(() => {
     loadAgents();
+    // Live fleet status: auto-refresh agent inventory every 15s so the
+    // Sensors tab tracks Wazuh in near real time.
+    const timer = setInterval(() => { loadAgents(); }, 15000);
+    return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!loading) setLastUpdated(new Date().toLocaleTimeString([], { hour12: false }));
+  }, [agents]);
 
   const total = agents.length;
   const active = agents.filter(a => a.status === 'active').length;
@@ -41,9 +50,14 @@ export default function SensorsDashboard() {
           <Activity className="w-6 h-6 text-emerald-500" />
           Sensor Fleet Status
         </h1>
-        <button onClick={loadAgents} disabled={loading} className="p-2 border border-neutral-800 rounded bg-black hover:bg-neutral-900 transition-colors text-neutral-400">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-widest">
+            {lastUpdated ? `Updated ${lastUpdated} · auto-refresh 15s` : 'Loading...'}
+          </span>
+          <button onClick={loadAgents} disabled={loading} className="p-2 border border-neutral-800 rounded bg-black hover:bg-neutral-900 transition-colors text-neutral-400">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {error ? (

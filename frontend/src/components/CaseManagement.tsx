@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Incident } from '../types';
 
 export default function CaseManagement({ incidents, onSelectIncident }: { incidents: Incident[], onSelectIncident: (i: Incident) => void }) {

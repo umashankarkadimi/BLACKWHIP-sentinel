@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { Incident, AIAnalysis } from "../frontend/src/types.js";
+import { logger } from "./logger.js";
 
 const AI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
@@ -50,7 +51,7 @@ export async function runAIAnalysis(incident: Incident): Promise<AIAnalysis> {
     
     return JSON.parse(text) as AIAnalysis;
   } catch (error) {
-    console.error("Paul Analysis failed:", error);
+    logger.error("ai_analysis_failed", { error: error instanceof Error ? error.message : String(error) });
     // Fallback if Paul fails
     return {
       classification: "Suspicious",
@@ -106,7 +107,7 @@ ${storeData.incidents.slice(0, 5).map((i: any) => `- ID: ${i.incident_id} | ${i.
     });
     return response.text || "PAUL ERROR: UNABLE TO COMPUTE RESPONSE.";
   } catch (error) {
-    console.error("Paul Global Chat failed:", error);
+    logger.error("ai_global_chat_failed", { error: error instanceof Error ? error.message : String(error) });
     return "PAUL ERROR: GLOBAL CONNECTION FAILED.";
   }
 }
@@ -154,7 +155,7 @@ ${incident.iocs?.map(i => `- ${i.type}: ${i.value} (${i.source}) - Malicious: ${
     });
     return response.text || "PAUL ERROR: UNABLE TO COMPUTE RESPONSE.";
   } catch (error) {
-    console.error("Paul Chat failed:", error);
+    logger.error("ai_chat_failed", { error: error instanceof Error ? error.message : String(error) });
     return "PAUL ERROR: CONNECTION FAILED.";
   }
 }

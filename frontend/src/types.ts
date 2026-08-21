@@ -48,6 +48,8 @@ export interface Alert {
   mitre_tactic?: string;
   mitre_technique?: string;
   incident_id?: string;
+  /** Number of duplicate events aggregated into this alert (dedup window). */
+  count?: number;
 }
 
 export interface Incident {
@@ -69,6 +71,7 @@ export interface Incident {
   case_notes?: { timestamp: string; author: string; content: string }[];
   case_tasks?: { id: string; title: string; completed: boolean }[];
   case_evidence?: { type: string; value: string; added_at: string }[];
+  blocked_ips?: string[];
 }
 
 export interface AIAnalysis {
@@ -92,8 +95,8 @@ export interface ChatMessage {
 }
 
 export interface SystemState {
-  mode: 'LIVE' | 'SIMULATION';
-  telemetrySource: 'SIMULATED' | 'REAL';
+  mode: 'LIVE';
+  telemetrySource: 'REAL';
   threatLevel: ThreatLevel;
   activeIncidents: number;
   highAlerts: number;

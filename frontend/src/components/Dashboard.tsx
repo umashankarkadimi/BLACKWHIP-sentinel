@@ -1,4 +1,4 @@
-import React, {  useMemo, useState , useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SystemState, Incident } from '../types';
 import { AlertTriangle, ShieldAlert, Monitor, Activity, Filter } from 'lucide-react';
 import { formatTime } from '../utils';

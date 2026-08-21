@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "blackwhip-sentinelx",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,9 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node scripts/smoke-test.cjs",
+    "db:backup": "node scripts/backup-db.cjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -20,6 +22,7 @@
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "clsx": "^2.1.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "date-fns": "^4.4.0",
     "dotenv": "^17.4.2",
@@ -40,6 +43,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^9.6.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/express-rate-limit": "^5.1.3",

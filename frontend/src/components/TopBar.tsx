@@ -1,11 +1,13 @@
 import { authFetch } from '../utils';
-import React, { useState } from 'react';
-import { Shield, Play, Bell, Settings, User, Zap, Crosshair, X, Moon, Sun, LogOut } from 'lucide-react';
-import { SystemState } from '../types';
+import React, { useMemo, useState } from 'react';
+import { Shield, Bell, Settings, User, X, Moon, Sun, LogOut } from 'lucide-react';
+import { SystemState, Alert } from '../types';
 import { useAuth } from '../lib/AuthProvider';
+import { APP_VERSION } from '../version';
 
 export default function TopBar({ 
   state, 
+  alerts = [],
   isConnected = true,
   isDarkMode = true,
   activeMainTab = 'dashboard',
@@ -13,10 +15,10 @@ export default function TopBar({
   onToggleDarkMode,
   onOpenSettings,
   onOpenProfile,
-  onToggleDefense,
-  onToggleMode
+  onToggleDefense
 }: { 
   state: SystemState;
+  alerts?: Alert[];
   isConnected?: boolean;
   isDarkMode?: boolean;
   activeMainTab?: 'dashboard' | 'workflows' | 'sensors' | 'hunting' | 'cases' | 'rules';
@@ -25,15 +27,27 @@ export default function TopBar({
   onOpenSettings?: (tab: string) => void;
   onOpenProfile?: (tab: string) => void;
   onToggleDefense?: () => void;
-  onToggleMode: () => void;
 }) {
   const { user, role, logOut } = useAuth();
-  
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'Paul Updated', desc: 'Paul synced successfully.', type: 'info' },
-    { id: 2, title: 'Threat Intel Alert', desc: 'New IOC signatures pulled from global C2.', type: 'alert' },
-    { id: 3, title: 'SOAR Executed', desc: 'Playbook [Isolate_Host] ran 2 hrs ago.', type: 'info' }
-  ]);
+
+  // Notifications are derived from real alerts pushed over SSE (last 8),
+  // not a static demo list.
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const notifications = useMemo(() => {
+    return alerts
+      .filter(a => !dismissed.has(a.alert_id))
+      .slice(0, 8)
+      .map(a => {
+        const host = a.events?.[0]?.hostname || 'unknown host';
+        const count = (a.count || 1) > 1 ? ` ×${a.count}` : '';
+        return {
+          id: a.alert_id,
+          title: a.rule_name,
+          desc: `${host} · ${a.severity}${count}`,
+          type: (a.severity === 'HIGH' || a.severity === 'CRITICAL') ? 'alert' : 'info'
+        };
+      });
+  }, [alerts, dismissed]);
 
   
 
@@ -49,9 +63,9 @@ export default function TopBar({
     }
   };
 
-  const dismissNotification = (id: number, e: React.MouseEvent) => {
+  const dismissNotification = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    setDismissed(prev => new Set(prev).add(id));
   };
 
   return (
@@ -62,31 +76,18 @@ export default function TopBar({
             <Shield className="w-4 h-4 text-red-700 dark:text-red-500" />
           </div>
           <div>
-            <h1 className="text-[14px] font-bold text-neutral-50 dark:text-neutral-50 tracking-[0.2em]">BLVCKWHIP <span className="text-red-700 dark:text-red-500">SENTINELX</span></h1>
+            <h1 className="text-[14px] font-bold text-neutral-50 dark:text-neutral-50 tracking-[0.2em]">BLVCKWHIP <span className="text-red-700 dark:text-red-500">SENTINELX</span> <span className="text-[8px] text-neutral-600 font-mono tracking-normal">v{APP_VERSION}</span></h1>
             <div className="flex items-center gap-3 text-[10px] text-neutral-600 dark:text-neutral-400 font-mono uppercase tracking-widest mt-0.5">
               {isConnected ? (
-                <>
-                  <span className="flex items-center gap-1 text-red-700 dark:text-red-500">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]"></span>
-                    SYS.ONLINE
-                  </span>
-                  <button
-                    onClick={onToggleMode}
-                    className="bg-black dark:bg-black px-1.5 py-0.5 rounded border border-red-500/20 dark:border-red-500/20 text-red-700 dark:text-red-500 hover:bg-neutral-800 transition-colors cursor-pointer"
-                  >
-                    MODE: {state.mode}
-                  </button>
-                </>
+                <span className="flex items-center gap-1 text-red-700 dark:text-red-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]"></span>
+                  SYS.ONLINE · LIVE TELEMETRY
+                </span>
               ) : (
-                <>
-                  <span className="flex items-center gap-1 text-red-700 dark:text-red-500">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></span>
-                    SYS.OFFLINE
-                  </span>
-                  <span className="bg-red-500/10 dark:bg-red-700/30 px-1.5 py-0.5 rounded border border-rose-900 text-red-700 dark:text-red-500">
-                    MODE: DISCONNECTED
-                  </span>
-                </>
+                <span className="flex items-center gap-1 text-red-700 dark:text-red-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></span>
+                  SYS.OFFLINE · RECONNECTING
+                </span>
               )}
             </div>
           </div>
@@ -194,7 +195,7 @@ export default function TopBar({
                   <span className="text-[10px] font-bold text-red-700 dark:text-red-500 uppercase tracking-widest">System Notifications</span>
                   {notifications.length > 0 && (
                     <button 
-                      onClick={() => setNotifications([])} 
+                      onClick={() => setDismissed(new Set(alerts.map(a => a.alert_id)))} 
                       className="text-[9px] font-bold text-neutral-500 hover:text-red-700 dark:text-red-500 transition-colors uppercase"
                     >
                       Clear All
